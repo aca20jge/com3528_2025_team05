@@ -2,32 +2,24 @@
 # -*- coding: utf-8 -*-
 
 """
-This script makes MiRo look for a blue ball and kick it
-
-The code was tested for Python 2 and 3
-For Python 2 you might need to change the shebang line to
-#!/usr/bin/env python
+Makes a Miro look for and 'play' with another Miro.
 """
 
 # Imports
 import os
 import subprocess
-import math  # This is used to reset the head pose
-import numpy as np  # Numerical Analysis library
-import cv2  # Computer Vision library
+import math
+import numpy as np
+import cv2
 
-import rospy  # ROS Python interface
-from sensor_msgs.msg import CompressedImage  # ROS CompressedImage message
-from sensor_msgs.msg import JointState  # ROS joints state message
-from cv_bridge import CvBridge, CvBridgeError  # ROS -> OpenCV converter
-from geometry_msgs.msg import TwistStamped, Pose2D  # ROS cmd_vel (velocity control) message
+import rospy 
+from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import JointState, Range
+from cv_bridge import CvBridge, CvBridgeError
+from geometry_msgs.msg import TwistStamped, Pose2D
 
-import miro2 as miro  # Import MiRo Developer Kit library
+import miro2 as miro
 
-try:  # For convenience, import this util separately
-    from miro2.lib import wheel_speed2cmd_vel  # Python 3
-except ImportError:
-    from miro2.utils import wheel_speed2cmd_vel  # Python 2
 
 class MiRoClient:
     """
@@ -103,7 +95,7 @@ class MiRoClient:
         wheel_speed = [speed_l, speed_r]
 
         # Convert wheel speed to command velocity (m/sec, Rad/sec)
-        (dr, dtheta) = wheel_speed2cmd_vel(wheel_speed)
+        (dr, dtheta) = miro.lib.wheel_speed2cmd_vel(wheel_speed)
 
         # Update the message with the desired speed
         msg_cmd_vel.twist.linear.x = dr
@@ -112,12 +104,15 @@ class MiRoClient:
         # Publish message to control/cmd_vel topic
         self.vel_pub.publish(msg_cmd_vel)
 
-    def callback_miro_pose(self, msg):
+    def callback_miro_pose(self, msg): # Miro pose
         self.miro_pose = msg
 
-    def callback_miro_0_pose(self, msg):
+    def callback_miro_0_pose(self, msg): # 
         self.miro_0_pose = msg
 
+    def callback_miro_sonar(self, msg):
+        self.sonar_distance = msg.range
+    
     def callback_caml(self, ros_image):  # Left camera
         self.callback_cam(ros_image, 0)
 
@@ -181,7 +176,7 @@ class MiRoClient:
         miro_detected = self.miro_in_view()
         # If no miro has been detected
         if not miro_detected:
-                self.drive(-self.SLOW, self.SLOW+0.2)
+                self.drive(self.FAST, 0)
         else:
             # self.status_code = 2  # Switch to the second action
             rospy.loginfo("Miro found miro_0")
@@ -239,14 +234,22 @@ class MiRoClient:
         """
         Approaches other Miro after identifying it.
         """
+        print(self.sonar_distance)
         if self.just_switched:
+            self.reset_head_pose()
             print("Approaching other Miro")
             self.just_switched = False
         if self.counter <= self.bookmark + 2 / self.TICK and not self.TRANSLATION_ONLY:
+            if self.sonar_distance < 0.15:
+                self.status_code = 4
             self.drive(self.FAST, self.FAST)
         else:
-            self.status_code = 0  # Back to the default state after the kick
-            self.just_switched = True
+            if not self.miro_in_view():
+                self.status_code = 0  # Back to the default state after the kick
+                self.drive(0, 0)
+                self.just_switched = True
+            else:
+                self.bookmark = self.counter
 
     def __init__(self):
         # Initialise a new ROS node to communicate with MiRo, if needed
@@ -289,7 +292,13 @@ class MiRoClient:
             Pose2D,
             self.callback_miro_0_pose
         )
-    
+        # Subscriber for sonar collision detection
+        self.sonar = rospy.Subscriber(
+            miro_topic + "/sensors/sonar",
+            Range,
+            self.callback_miro_sonar
+        )
+
         
         # Create a new publisher to send velocity commands to the robot
         self.vel_pub = rospy.Publisher(
@@ -340,9 +349,12 @@ class MiRoClient:
             elif self.status_code == 2:
                 self.lock_onto_ball()
 
-            # Step 3. Kick!
+            # Step 3. approach
             elif self.status_code == 3:
                 self.approach_other_miro()
+
+            elif self.status_code == 4:
+                rospy.sleep(100000)
 
             # Fall back
             else:
