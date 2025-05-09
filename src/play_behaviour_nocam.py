@@ -148,16 +148,12 @@ class MiRoClient:
 
         # detect wall
         if self.miro_0_sonar_distance < self.MIN_DISTANCE:
-            self.avoiding_wall_0 = True
-            self.drive(self.SLOW, -self.SLOW, miro_agent=0)
-        
-        # avoid wall
-        elif self.avoiding_wall_0 and self.miro_0_sonar_distance < self.MIN_DISTANCE:
+            rospy.loginfo("Miro 0 sees a wall")
             self.drive(self.SLOW, -self.SLOW, miro_agent=0)
 
         # run around
         else:
-            self.avoiding_wall_0 = False
+            rospy.loginfo("Miro 0 running")
             self.drive(self.FAST, self.FAST * 0.8, miro_agent=0)
 
     def miro_1_play(self):
@@ -165,7 +161,6 @@ class MiRoClient:
         miro 1 follows miro 2 whilst avoiding walls
         """
         if self.just_switched_1:
-            self.reset_head_pose(miro_agent=1)
             rospy.loginfo("Miro 1 is chasing Miro 0")
             self.just_switched_1 = False
 
@@ -197,7 +192,7 @@ class MiRoClient:
         rospy.sleep(2.0)
         
         # Robot prefixes for topics/subscribers
-        miro_topic = "/" + os.getenv("MIRO_ROBOT_NAME") 
+        miro_topic = "/miro" 
         miro_topic_2 = "/miro_0"
 
         # first miro 1 location data
@@ -249,8 +244,7 @@ class MiRoClient:
         self.just_switched_0 = True
         self.just_switched_1 = True
         
-        # flags for both miros if currently avoiding obstacle
-        self.avoiding_wall_0 = False
+        # flag if currently avoiding obstacle
         self.avoiding_wall_1 = False
 
         # status codes for both miros (for changing funcs)
