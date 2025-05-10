@@ -8,6 +8,7 @@ Makes a Miro look for and 'play' with another Miro.
 # Imports
 import os
 import math
+import random
 import rospy
 
 from sensor_msgs.msg import JointState, Range
@@ -113,7 +114,11 @@ class MiRoClient:
         """
         if self.just_switched_1:
             rospy.loginfo(f"miro {str(miro_agent)} is looking for another miro...")
-            self.just_switched_1 = False
+            if miro_agent == 1:
+                self.just_switched_1 = False
+            else:
+                self.just_switched_0 = False
+
 
         # find angle between miros
         if miro_agent == 1:
@@ -123,7 +128,6 @@ class MiRoClient:
             angle_to_other_miro, miro_0_angle = self.angle_between_miros(self.miro_pose, self.miro_0_pose)
             angle_diff = (angle_to_other_miro - miro_0_angle + math.pi) % (2 * math.pi) - math.pi
 
-
         # rotates if cant see other miro
         if not self.miro_in_view(miro_agent=miro_agent):
             if angle_diff < 0:
@@ -131,23 +135,89 @@ class MiRoClient:
             else:
                 self.drive(0, self.FAST, miro_agent=miro_agent)
 
-        # start playing once it finds another miro
+        # approach after seeing other miro
         else:
             if miro_agent == 1:
-                self.status_code_1 = 2
+                # if already playing, dont need to approach
+                self.status_code_1 = 3 if self.is_chasing else 2
                 self.just_switched_1 = True
             else:
                 self.status_code_0 = 2
+                self.just_switched_0 = True        
+
+    def approach_other_miro(self, miro_agent=1):
+        """
+        approach another miro before playing
+        """
+        if self.just_switched_1 if miro_agent == 1 else self.just_switched_0:
+            rospy.loginfo(f"miro {miro_agent} is slowly approaching...")
+            if miro_agent == 1:
+                self.just_switched_1 = False
+            else:
+                self.just_switched_0 = False
+
+        # slowly approach other miro
+        if self.miro_in_view(miro_agent=miro_agent):
+            if miro_agent == 1:
+                # increase excitement while other miro in view
+                self.miro_1_excitement += random.random()
+                print(self.miro_1_excitement)
+            
+                # approach other miro
+                if self.miro_0_sonar_distance > self.MIN_DISTANCE:
+                    self.drive(self.FAST*0.5, self.FAST*0.5, miro_agent=miro_agent)
+                else:
+                    self.drive(0, 0, miro_agent=miro_agent)
+                    
+                    # play if excited enough
+                    if self.miro_1_excitement >= 100:
+                        self.status_code_1 = 3
+                        self.just_switched_1 = True
+            
+            else:
+                # increase excitement while other miro in view
+                self.miro_0_excitement += random.random()
+                print(self.miro_0_excitement)
+
+                # approach other miro
+                if self.miro_0_sonar_distance > self.MIN_DISTANCE:
+                    self.drive(self.FAST*0.5, self.FAST*0.5, miro_agent=miro_agent)
+                else:
+                    self.drive(0, 0, miro_agent=miro_agent)
+
+                    # play if excited enough
+                    if self.miro_0_excitement >= 100:
+                        self.status_code_0 = 3
+                        self.just_switched_0 = True
+                    
+        # look for miro again if lost sight
+        else:
+            if miro_agent == 1:
+                self.status_code_1 = 1
+                self.just_switched_1 = True
+            else:
+                self.status_code_0 = 1
                 self.just_switched_0 = True
+
 
     def miro_0_play(self):
         """
-        miro 0 moves in a curve, avoiding walls
+        miro 0 turns away from miro 1 and moves in a curve, avoiding walls
         """
         if self.just_switched_0:
+            rospy.loginfo("miro 0 is playing")
             self.just_switched_0 = False
+
+        # get angle between miro 0 and miro 1
+        angle_to_miro_1, miro_0_angle = self.angle_between_miros(self.miro_pose, self.miro_0_pose)
+        angle_diff = (angle_to_miro_1 - miro_0_angle + math.pi) % (2 * math.pi) - math.pi  # normalise to [-pi, pi]
+
+        # turns away from miro 1 before starting to run (avoids a crash)
+        if abs(angle_diff) < math.radians(90):
+            self.drive(self.SLOW, -self.SLOW, miro_agent=0)
+        
         # detect wall
-        if self.miro_0_sonar_distance < self.MIN_DISTANCE:
+        elif self.miro_0_sonar_distance < self.MIN_DISTANCE:
             self.drive(self.SLOW, -self.SLOW, miro_agent=0)
         # run around
         else:
@@ -158,16 +228,16 @@ class MiRoClient:
         miro 1 follows miro 0 whilst avoiding walls
         """
         if self.just_switched_1:
-            rospy.loginfo("Miro 1 is chasing Miro 0")
+            rospy.loginfo("miro 1 is chasing miro 0")
             self.just_switched_1 = False
+            self.is_chasing = True
 
         # avoid walls
         if self.sonar_distance < self.MIN_DISTANCE:
             self.drive(self.SLOW, -self.SLOW, miro_agent=1)
         
-        # if wall avoided or other miro lost, look for other miro again
-        elif self.avoiding_wall_1 or not self.miro_in_view(miro_agent=1):
-            self.avoiding_wall_1 = False
+        # if other miro lost, look for other miro again
+        elif not self.miro_in_view(miro_agent=1):
             self.status_code_1 = 1
             self.just_switched_1 = True
             self.drive(0, 0, miro_agent=1)
@@ -175,7 +245,6 @@ class MiRoClient:
         # follow other miro
         else:
             self.drive(self.FAST, self.FAST, miro_agent=1)
-
 
     def __init__(self):
 
@@ -214,7 +283,6 @@ class MiRoClient:
             Range,
             self.callback_miro_0_sonar
         )
-
         
         # miro 1 velocity publisher
         self.vel_pub = rospy.Publisher(
@@ -234,16 +302,20 @@ class MiRoClient:
             miro_topic_2 + "/control/kinematic_joints", JointState, queue_size=0
         )
 
-        # for determining if function just changed for both miros
+        # for determining if function just changed for both miros (avoids output clutter)
         self.just_switched_0 = True
         self.just_switched_1 = True
-        
-        # flag if currently avoiding obstacle
-        self.avoiding_wall_1 = False
 
         # status codes for both miros (for changing funcs)
         self.status_code_0 = 1
         self.status_code_1 = 1
+
+        # simple social emotion modelling for each robot
+        self.miro_0_excitement = 0
+        self.miro_1_excitement = 0
+
+        # flag whether miro 1 is already chasing miro 2
+        self.is_chasing = False
 
         self.reset_head_pose(miro_agent=1)
         self.reset_head_pose(miro_agent=0)
@@ -254,19 +326,22 @@ class MiRoClient:
         """
         print("MiRo play behavior, press CTRL+C to halt...")
         while not rospy.core.is_shutdown():
-            # calls miro 0 funcs
+
+            # miro 0 control
             if self.status_code_0 == 1:
                 self.look_for_miro(miro_agent=0)
             elif self.status_code_0 == 2:
+                self.approach_other_miro(miro_agent=0)
+            elif self.status_code_0 == 3:
                 self.miro_0_play()
 
-            # calls miro 1 funcs
+            # miro 1 control
             if self.status_code_1 == 1:
                 self.look_for_miro(miro_agent=1)
             elif self.status_code_1 == 2:
+                self.approach_other_miro(miro_agent=1)
+            elif self.status_code_1 == 3:
                 self.miro_1_play()
-            else:
-                self.status_code_1 = 1
 
             rospy.sleep(self.TICK)
 
