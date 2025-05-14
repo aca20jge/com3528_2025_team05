@@ -36,7 +36,7 @@ simulation:
    c) add more miros to the environment by navigating to "Insert" (menu in
       top left) and clicking "MiRo Robot". add as many miros as you like.
 
-   d) [important] in play_behaviour.py you must change self.N_MIROS to the
+   d) [important] in play_behaviour.py you must change N_MIROS to the
       number of miros you have placed in the simulation.
 
    e) finally, you can run the script using
