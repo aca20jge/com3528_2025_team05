@@ -53,13 +53,14 @@ class MiRoClient:
                 "runner": False, # is going to be chased by another miro
                 "is_chasing": False, # is going to chase another miro
                 "partner": None, # miro id it is currently looking at
-                "pose_sub": rospy.Subscriber(miro_topic + "/sensors/body_pose", Pose2D, lambda msg, id=miro_id: self.callback_pose(msg, id)),
+                # subscribers use lambda functions for dynamic callbacks for each miro 
+                "pose_sub": rospy.Subscriber(miro_topic + "/sensors/body_pose", Pose2D, lambda msg, id=miro_id: self.callback_pose(msg, id)), 
                 "sonar_sub": rospy.Subscriber(miro_topic + "/sensors/sonar", Range, lambda msg, id=miro_id: self.callback_sonar(msg, id)),
                 "vel_pub": rospy.Publisher(miro_topic + "/control/cmd_vel", TwistStamped, queue_size=0),
                 "kin_pub": rospy.Publisher(miro_topic + "/control/kinematic_joints", JointState, queue_size=0)
             }
 
-
+        # reset head pose of all miros
         for miro_id in self.miros:
             self.reset_head_pose(miro_id)
             rospy.loginfo(f"head pose reset for miro {miro_id}")
@@ -93,39 +94,45 @@ class MiRoClient:
         helps miro drive 
         altered version of example script code to work with multiple miros
         """
-        # Prepare an empty velocity command message
+        # empty vel message
         msg_cmd_vel = TwistStamped()
-
-        # Desired wheel speed (m/sec)
         wheel_speed = [speed_l, speed_r]
 
-        # Convert wheel speed to command velocity (m/sec, Rad/sec)
+        # convert wheel speed to command velocity (m/sec, Rad/sec)
         (dr, dtheta) = miro.lib.wheel_speed2cmd_vel(wheel_speed)
 
-        # Update the message with the desired speed
+        # update the message with the desired speed
         msg_cmd_vel.twist.linear.x = dr
         msg_cmd_vel.twist.angular.z = dtheta
 
-        # Publish message to control/cmd_vel topic
+        # publish message to control/cmd_vel topic for given miro
         self.miros[miro_id]["vel_pub"].publish(msg_cmd_vel)
 
     def angle_between_miros(self, other_miro=None, miro_id=None):
         '''
         calculates angle between miro_pose_2 to miro_pose_1
-        returns angle to other miro in [-pi, pi]
+        returns angle to other miro in [-pi, pi] and normalised angle of current miro
         '''
 
+        # gets pose of current miro
         first_pose = self.miros[miro_id]["pose"]
+        
+        # automatically finds target miro if parameter not passed
         if other_miro == None:
             second_pose = self.miros[self.miros[miro_id]["partner"]]["pose"]
+        # otherwise uses parameters
         else:
             second_pose = self.miros[other_miro]["pose"]
 
-        x0, y0 = second_pose.x, second_pose.y
+        # gets coordinates of current miro and target miro
         x, y, theta = first_pose.x, first_pose.y, first_pose.theta
+        x0, y0 = second_pose.x, second_pose.y
 
+        # calculates an angle between the miros
         angle_to_other_miro = math.atan2(y0 - y, x0 - x)
-        theta = (theta + math.pi) % (2 * math.pi) - math.pi # normalise to -pi, pi
+
+        # normalise to -pi, pi
+        theta = (theta + math.pi) % (2 * math.pi) - math.pi
 
         return angle_to_other_miro, theta
 
@@ -134,16 +141,28 @@ class MiRoClient:
         detect if miro can 'see' another using coordinates
         """
         miro = self.miros[miro_id]
-        vision_angle = math.radians(25) # random fov "it just works"
+        # set an fov—this probably isnt miros actual fov
+        vision_angle = math.radians(25) 
 
+        # if not targeting a specific agent
         if miro["partner"] == None:
+
+            # iterate through each agent
             for other_miro in self.miros:
                 if other_miro != miro_id:
+
+                    # detect if other_miro is in view
                     angle_to_other_miro, theta = self.angle_between_miros(other_miro, miro_id)
                     if abs(theta - angle_to_other_miro) < vision_angle:
+                        
+                        # assign as partner if in view
                         miro["partner"] = other_miro
                         return True
+            
+            # if no miro in view return false
             return False
+        
+        # detects if partner miro in view if applicable
         else:
             angle_to_other_miro, theta = self.angle_between_miros(miro["partner"], miro_id)
             if abs(theta - angle_to_other_miro) < vision_angle:
@@ -153,18 +172,20 @@ class MiRoClient:
 
     def look_for_miro(self, miro_id):
         """
-        miros wander around until seeing another miro
+        miros wander until seeing another miro
         """
         miro = self.miros[miro_id]
         if miro["just_switched"]:
             miro["just_switched"] = False
 
-        # spins if cant see other miro
+        # wanders around whilst avoiding walls if a miro is not in view
         if not self.other_miro_in_view(miro_id):
             if miro["sonar"] > self.MIN_DISTANCE:
                 self.drive(self.FAST, self.FAST*0.7, miro_id)
             else:
                 self.drive(self.FAST, -self.FAST, miro_id)
+        
+        # if a miro is in view, play or approach
         else:
             self.miros[miro_id]["just_switched"] = True
             
@@ -191,25 +212,28 @@ class MiRoClient:
 
         # slowly approach other miro
         if self.other_miro_in_view(miro_id):
-            # increase excitement while other miro in view
 
+            # increase excitement while other miro in view
             miro["excitement"] = 100 if miro["excitement"] > 100 else miro["excitement"] + random.random()
 
             # play if excited enough
             if miro["excitement"] >= 100:
+                # play if partner is excited or is currently playing
                 if partner["excitement"] >=100 or partner["is_chasing"] or partner["runner"]:
                     miro["status_code"] = 3
                     miro["just_switched"] = True
+
+                # if partner is not yet excited, continue to approach
                 else:
+                    # adopt runner role if partner is not runner
                     if not partner["runner"]:
                         miro["runner"] = True
                     if miro["sonar"] > self.MIN_DISTANCE:
                         self.drive(self.FAST*0.5, self.FAST*0.5, miro_id)
                     else:
                         self.drive(-self.SLOW, self.SLOW, miro_id)
-
                     
-            # approach other miro
+            # approach other miro whilst avoiding wall
             elif miro["sonar"] > self.MIN_DISTANCE:
                 self.drive(self.FAST*0.5, self.FAST*0.5, miro_id)
             else:
@@ -221,7 +245,7 @@ class MiRoClient:
 
             angle_diff = (angle_to_other_miro - miro_0_angle + math.pi) % (2 * math.pi) - math.pi
 
-            # turn towards other miro
+            # turn in direction of partner miro
             if angle_diff < 0:
                 self.drive(self.FAST, 0, miro_id)
             else:
@@ -231,15 +255,18 @@ class MiRoClient:
         """
         miro 0 turns away from miro 1 and moves in a curve, avoiding walls
         """
+        
         miro = self.miros[miro_id]
+
         if miro["just_switched"]:
             rospy.loginfo(f"miro {miro_id} is playing")
             miro["just_switched"] = False
 
+        # decrease excitement whilst playing
         miro["excitement"] -= random.random()/5
 
+        # get angles between miros
         angle_to_other_miro, miro_0_angle = self.angle_between_miros(miro_id=miro_id) 
-
         angle_diff = (angle_to_other_miro - miro_0_angle + math.pi) % (2 * math.pi) - math.pi
 
         if miro["excitement"] > 0:
@@ -253,6 +280,8 @@ class MiRoClient:
             # run around
             else:
                 self.drive(self.FAST, self.FAST*0.8, miro_id)
+
+        # once excitement is depleted, reset and look for another miro
         else:
             self.drive(0, 0, miro_id)
             miro["runner"] = False
@@ -271,6 +300,7 @@ class MiRoClient:
             miro["just_switched"] = False
             miro["is_chasing"] = True
 
+        # decrease excitement whilst playing
         miro["excitement"] -= random.random()/5
 
         if miro["excitement"] > 0:
@@ -283,15 +313,17 @@ class MiRoClient:
                 angle_to_other_miro, miro_0_angle = self.angle_between_miros(other_miro=miro["partner"], miro_id=miro_id) 
                 angle_diff = (angle_to_other_miro - miro_0_angle + math.pi) % (2 * math.pi) - math.pi
                 
-                # turn towards other miro
+                # turn in direction of other miro
                 if angle_diff < 0:
                     self.drive(self.FAST, 0, miro_id)
                 else:
                     self.drive(0, self.FAST, miro_id)
 
-            # follow other miro
+            # chase other miro whilst in view
             else:
                 self.drive(self.FAST, self.FAST, miro_id)
+
+        # once excitement depletes, reset and look for another miro
         else:
             self.drive(0, 0, miro_id)
             miro["is_chasing"] = False
@@ -307,6 +339,7 @@ class MiRoClient:
         print("MiRo play behavior, press CTRL+C to halt...")
         while not rospy.core.is_shutdown():
 
+            # iterates through each miro, calling a control function respectively to its status code
             for miro_id in self.miros:
                 miro = self.miros[miro_id]
                 if miro["status_code"] == 1:
@@ -322,8 +355,6 @@ class MiRoClient:
             rospy.sleep(self.TICK)
 
 
-
-# This condition fires when the script is called directly
 if __name__ == "__main__":
-    main = MiRoClient()  # Instantiate class
-    main.loop()  # Run the main control loop
+    main = MiRoClient()
+    main.loop()
