@@ -21,13 +21,19 @@ simulation:
    for this command to work, you will need to have an environment
    containing one or more miros already open. this can be achieved
    by following these steps:
+   
    a) run the "miro_sim" command, which launches a simulation environment
       with one miro.
+
    b) remove the blue ball from the environment (click on it and press the
       delete key).
+
    c) add more miros to the environment by navigating to "Insert" (menu in
       top left) and clicking "MiRo Robot". add as many miros as you like.
+
    d) [important] in play_behaviour.py you must change self.N_MIROS to the
       number of miros you have placed in the simulation.
+
    e) finally, you can run the script using
+
       rosrun team05_assignment play_behaviour.py
