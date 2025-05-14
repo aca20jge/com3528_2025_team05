@@ -22,7 +22,7 @@
   />
 
   <env name="MIRO_ROBOT_NAME" value="miro" />
-  <node ns="miro" name="miro" pkg="team05_assignment" type="play_behaviour_nocam.py" output="screen"/>
+  <node ns="miro" name="miro" pkg="team05_assignment" type="play_behaviour.py" output="screen"/>
 
   <node name="gazebo_gui"
         pkg="gazebo_ros"
