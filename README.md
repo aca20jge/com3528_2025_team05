@@ -16,11 +16,13 @@ once the package has been built, there are two options for running the
 simulation:
 
 1. roslaunch team05_assignment play_behaviour.launch
+   
    this will run the script in a world containing seven miro agents.
    leaving the script unedited, the launch file should run fine and
    you will see the seven agents begin to socialise.
    
-2. rosrun team05_assignment play_behaviour.py
+3. rosrun team05_assignment play_behaviour.py
+   
    for this command to work, you will need to have an environment
    containing one or more miros already open. this can be achieved
    by following these steps:
