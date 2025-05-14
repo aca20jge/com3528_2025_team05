@@ -2,7 +2,10 @@
 
 
 this repository contains a script to have miros engage in social/play
-behaviour. it contains a script, play_behaviour.py which 
+behaviour. it contains a script, src/play_behaviour.py, which contains the
+main functionality. it also contains a launch file, which can be found at
+launch/play_behaviour.launch. detailed instructions for running these
+scripts can be found later in this readme.
 
 you must save the repository to your catkin_ws/src directory in your mdk 
 environment. then, you must build the team05_assignment package using 
