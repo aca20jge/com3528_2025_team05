@@ -9,7 +9,7 @@
   <env name="GAZEBO_PLUGIN_PATH"
        value="$(optenv MIRO_DIR_MDK)/bin/${MIRO_SYSTEM}:$(optenv GAZEBO_PLUGIN_PATH)" />
 
-  <arg name="world" default="$(find team05_assignment)/sim/worlds/play_sim.world"/>
+  <arg name="world" default="$(find team05_assignment)/sim/worlds/seven_miros.world"/>
 
   <arg name="gazebo_ns" default="gazebo_server" doc="Gazebo namespace, typically 'gazebo' or 'gazebo_server'" />
 

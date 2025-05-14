@@ -19,11 +19,11 @@ import miro2 as miro
 
 class MiRoClient:
 
-    TICK = 0.02  # This is the update interval for the main control loop in secs
-    SLOW = 0.1  # Radial speed when turning on the spot (rad/s)
-    FAST = 0.4  # Linear speed when kicking the ball (m/s)
+    TICK = 0.02  # update interval in seconds
+    SLOW = 0.1  # m/s
+    FAST = 0.4  # m/s
     MIN_DISTANCE = 0.18  # minimum distance to maintain between miros
-    N_MIROS = 6
+    N_MIROS = 7 # number of miros to be used in sim
 
     def __init__(self):
         rospy.loginfo("starting")
@@ -45,11 +45,11 @@ class MiRoClient:
 
             self.miros[miro_id] = {
                 "id": miro_id,
-                "pose": Pose2D(),
-                "sonar": 100.0,
-                "just_switched": True,
-                "status_code": 1,
-                "excitement": 0,
+                "pose": Pose2D(), # initialise pose object
+                "sonar": 100.0, # initialise sonar arbitrarily high
+                "just_switched": True, # avoids excessive printing
+                "status_code": 1, # controls flow
+                "excitement": 0, # level of excitement--changes based on social behaviours
                 "runner": False, # is going to be chased by another miro
                 "is_chasing": False, # is going to chase another miro
                 "partner": None, # miro id it is currently looking at
@@ -161,8 +161,10 @@ class MiRoClient:
 
         # spins if cant see other miro
         if not self.other_miro_in_view(miro_id):
-            self.drive(self.FAST, -self.FAST, miro_id)
-
+            if miro["sonar"] > self.MIN_DISTANCE:
+                self.drive(self.FAST, self.FAST*0.7, miro_id)
+            else:
+                self.drive(self.FAST, -self.FAST, miro_id)
         else:
             self.miros[miro_id]["just_switched"] = True
             
@@ -188,7 +190,7 @@ class MiRoClient:
             miro["just_switched"] = False
 
         # slowly approach other miro
-        if self.other_miro_in_view(miro_id) != False:
+        if self.other_miro_in_view(miro_id):
             # increase excitement while other miro in view
 
             miro["excitement"] = 100 if miro["excitement"] > 100 else miro["excitement"] + random.random()
@@ -199,17 +201,22 @@ class MiRoClient:
                     miro["status_code"] = 3
                     miro["just_switched"] = True
                 else:
-                    miro["runner"] = True
+                    if not partner["runner"]:
+                        miro["runner"] = True
+                    if miro["sonar"] > self.MIN_DISTANCE:
+                        self.drive(self.FAST*0.5, self.FAST*0.5, miro_id)
+                    else:
+                        self.drive(-self.SLOW, self.SLOW, miro_id)
 
+                    
             # approach other miro
             elif miro["sonar"] > self.MIN_DISTANCE:
                 self.drive(self.FAST*0.5, self.FAST*0.5, miro_id)
             else:
-                self.drive(0, 0, miro_id)
+                self.drive(-self.SLOW, self.SLOW, miro_id)
                     
         # look at other miro again if lost
         else:
-            rospy.loginfo(f"miro {miro_id} has lost sight of {miro['partner']}")
             angle_to_other_miro, miro_0_angle = self.angle_between_miros(miro_id=miro_id) 
 
             angle_diff = (angle_to_other_miro - miro_0_angle + math.pi) % (2 * math.pi) - math.pi
@@ -229,7 +236,7 @@ class MiRoClient:
             rospy.loginfo(f"miro {miro_id} is playing")
             miro["just_switched"] = False
 
-        miro["excitement"] -= random.random()/10
+        miro["excitement"] -= random.random()/5
 
         angle_to_other_miro, miro_0_angle = self.angle_between_miros(miro_id=miro_id) 
 
@@ -260,12 +267,11 @@ class MiRoClient:
         """
         miro = self.miros[miro_id]
         if miro["just_switched"]:
-            rospy.loginfo(f"miro {miro_id} is chasing miro ")
+            rospy.loginfo(f"miro {miro_id} is chasing {miro['partner']}")
             miro["just_switched"] = False
             miro["is_chasing"] = True
 
-        miro["excitement"] -= random.random()/10
-        print(f"miro {miro_id} excitement: {miro['excitement']:.1f}%")
+        miro["excitement"] -= random.random()/5
 
         if miro["excitement"] > 0:
             # avoid collisions
